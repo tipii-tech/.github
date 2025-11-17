@@ -6,10 +6,10 @@ We build beautiful, simple, and emotional photo experiences, powered by great en
 ## 🚀 What We Do
 
 Tipii is a premium photo-printing experience with a strong focus on:
-	•	Exceptional user experience (clean, intuitive, emotion-driven)
-	•	High-quality printing workflows
-	•	AI-assisted album creation
-	•	Modern engineering foundations across backend, infrastructure, and data
+1. Exceptional user experience (clean, intuitive, emotion-driven)
+2. High-quality printing workflows
+3. AI-assisted album creation
+4. Modern engineering foundations across backend, infrastructure, and data
 
 ## 📦 Repository Naming Convention
 
