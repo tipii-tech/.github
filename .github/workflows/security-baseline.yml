@@ -1,0 +1,64 @@
+# Called by every repo, on PR and on push to main. This repo is public: results stay
+# in the logs of the calling repo, and nothing here may hold a secret.
+# Uses free CLI scanners: CodeQL, GitHub secret scanning and dependency-review
+# need paid Advanced Security on private repos, and gitleaks-action needs a licence for orgs.
+name: security-baseline
+on:
+  workflow_call:
+    inputs:
+      semgrep-config:
+        description: Semgrep rule packs, space separated
+        type: string
+        default: "p/ci p/secrets"
+      report-only:
+        description: Show findings without failing the workflow
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ inputs.report-only }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Scan new commits
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          range="$BASE..$HEAD"
+          case "$BASE" in ""|0000000*) range="$HEAD~1..$HEAD" ;; esac
+          docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            git --no-banner --redact --log-opts="$range" .
+
+  semgrep:
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ inputs.report-only }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Scan
+        env:
+          CONFIGS: ${{ inputs.semgrep-config }}
+        run: |
+          args=""
+          for c in $CONFIGS; do args="$args --config $c"; done
+          docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep:1.184.0 \
+            semgrep scan $args --error --metrics=off
+
+  osv-scanner:
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ inputs.report-only }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Scan lockfiles
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src ghcr.io/google/osv-scanner:v2.7.0 \
+            scan source --recursive .

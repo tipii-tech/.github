@@ -1,0 +1,52 @@
+# Makes the AI-specific risks visible on the PR: fails
+# on tests disabled, or a manifest changed, unless the PR carries the matching label.
+name: ai-guardrails
+on:
+  workflow_call:
+    inputs:
+      report-only:
+        description: Show findings without failing the workflow
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  diff-policy:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ inputs.report-only }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Check the diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          status=0
+          tests='(^|/)(test|tests|__tests__|androidTest|commonTest|jvmTest)/|\.(spec|test)\.[jt]sx?$|Tests?\.(kt|swift)$'
+          manifests='(^|/)(package\.json|libs\.versions\.toml|Versions\.kt|Package\.swift|build\.gradle\.kts)$'
+
+          disabled=""
+          changed_tests=$(git diff --name-only "$BASE...HEAD" | grep -E "$tests" || true)
+          if [ -n "$changed_tests" ]; then
+            disabled=$(git diff "$BASE...HEAD" -- $changed_tests \
+              | grep -E '^\+' | grep -E '\.(skip|only)\(|@Disabled|@Ignore|XCTSkip|xit\(|xdescribe\(' || true)
+          fi
+          if [ -n "$disabled" ] && ! grep -q 'tests-disabled-ok' <<<"$LABELS"; then
+            echo "::error::A test is skipped or disabled. Add label tests-disabled-ok if this is deliberate."
+            echo "$disabled"
+            status=1
+          fi
+
+          if git diff --name-only "$BASE...HEAD" | grep -qE "$manifests" \
+             && ! grep -q 'dependency-reviewed' <<<"$LABELS"; then
+            echo "::error::A dependency manifest changed. Review it, then add label dependency-reviewed."
+            status=1
+          fi
+          exit $status
